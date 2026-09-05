@@ -61,10 +61,31 @@ export default function Page() {
   const [source, setSource] = useState('')
   const [result, setResult] = useState('')
   const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState('')
   const [options, setOptions] = useState<Options>({ rename: true, strings: true, comments: true, compact: false })
   const stats = useMemo(() => ({ input: source.length, output: result.length }), [source, result])
 
-  const process = () => setResult(obfuscateLua(source, options))
+  const process = async () => {
+    if (!source.trim()) return
+    setBusy(true)
+    setNotice('Publishing private script...')
+    try {
+      const protectedSource = obfuscateLua(source, options)
+      const bytes = new TextEncoder().encode(protectedSource)
+      const hash = await crypto.subtle.digest('SHA-256', bytes)
+      const id = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('')
+      const response = await fetch('/api/lua', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, source: protectedSource }) })
+      if (!response.ok) throw new Error('publish failed')
+      const endpoint = `${window.location.origin}/api/lua/${id}`
+      setResult(`loadstring(game:HttpGet("${endpoint}"))()`)
+      setNotice('Private endpoint ready')
+    } catch {
+      setNotice('Could not publish script')
+    } finally {
+      setBusy(false)
+    }
+  }
   const copy = async () => {
     if (!result) return
     await navigator.clipboard.writeText(result)
@@ -77,7 +98,7 @@ export default function Page() {
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = 'obfuscated.lua'
+    anchor.download = 'loadstring.lua'
     anchor.click()
     URL.revokeObjectURL(url)
   }
@@ -102,7 +123,7 @@ export default function Page() {
         <aside id="options" className="panel flex flex-col"><div className="panel-head"><span className="flex items-center gap-2"><Settings2 size={15} /> options</span><span className="text-[10px] text-muted-foreground">v1.0</span></div><div className="flex flex-col gap-1 p-3">{([['rename', 'Rename locals', 'replace identifiers'], ['strings', 'Encode strings', 'char sequence encoding'], ['comments', 'Strip comments', 'remove source notes'], ['compact', 'Compact output', 'single-line script']] as const).map(([key, label, note]) => <label key={key} className="option-row"><input type="checkbox" checked={options[key]} onChange={(e) => setOptions({ ...options, [key]: e.target.checked })} /><span className="checkmark">{options[key] && <Check size={12} />}</span><span><span className="block text-xs font-medium">{label}</span><span className="mt-0.5 block font-mono text-[9px] text-muted-foreground">{note}</span></span></label>)}</div><div className="mt-auto border-t border-border/70 p-4"><div className="mb-3 flex items-center justify-between font-mono text-[10px] text-muted-foreground"><span>INPUT</span><span>{stats.input.toLocaleString()} chars</span></div><div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground"><span>OUTPUT</span><span>{stats.output.toLocaleString()} chars</span></div></div></aside>
       </section>
 
-      <section className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-3 px-5 pb-12 lg:px-8"><button className="primary-button" onClick={process}><Play size={15} fill="currentColor" /> Obfuscate script <span className="shortcut">⌘ ↵</span></button><button className="ghost-button" onClick={() => { setSource(sampleLua); setResult('') }}><Sparkles size={14} /> Load example</button><button className="ghost-button" onClick={() => { setSource(''); setResult('') }}><Trash2 size={14} /> Clear</button><div className="ml-auto flex gap-2"><button className="icon-button" onClick={copy} disabled={!result} aria-label="Copy output">{copied ? <Check size={16} /> : <Clipboard size={16} />}</button><button className="icon-button" onClick={download} disabled={!result} aria-label="Download output"><ArrowDownToLine size={16} /></button></div></section>
+      <section className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-3 px-5 pb-12 lg:px-8"><button className="primary-button" onClick={process} disabled={busy}><Play size={15} fill="currentColor" /> {busy ? 'Publishing...' : 'Obfuscate & publish'} <span className="shortcut">⌘ ↵</span></button><span className="font-mono text-[10px] text-muted-foreground">{notice || 'output is a private loadstring endpoint'}</span><button className="ghost-button" onClick={() => { setSource(sampleLua); setResult('') }}><Sparkles size={14} /> Load example</button><button className="ghost-button" onClick={() => { setSource(''); setResult('') }}><Trash2 size={14} /> Clear</button><div className="ml-auto flex gap-2"><button className="icon-button" onClick={copy} disabled={!result} aria-label="Copy output">{copied ? <Check size={16} /> : <Clipboard size={16} />}</button><button className="icon-button" onClick={download} disabled={!result} aria-label="Download output"><ArrowDownToLine size={16} /></button></div></section>
 
       <footer id="about" className="border-t border-border/70"><div className="mx-auto flex max-w-[1440px] flex-col gap-3 px-5 py-6 text-[10px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between lg:px-8"><p className="font-mono">luashield.io / made for creators who ship</p><p className="flex items-center gap-2"><Zap size={12} className="text-primary" /> no uploads · no tracking · no nonsense</p></div></footer>
     </main>
