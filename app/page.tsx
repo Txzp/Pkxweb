@@ -1,135 +1,56 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import {
-  ArrowDownToLine,
-  Braces,
-  Check,
-  Clipboard,
-  Code2,
-  FileCode2,
-  GitBranch,
-  Play,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
-  Trash2,
-  Zap,
-} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, Copy, Eye, EyeOff, FileCode2, LockKeyhole, Plus, Snowflake, Upload, X } from 'lucide-react'
 
-const sampleLua = `local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+type Script = { id: string; name: string; visibility: 'public' | 'private'; created_at: string; loadstring: string }
 
-local function greetPlayer(player)
-    local message = "Welcome, " .. player.Name
-    print(message)
-    return message
-end
+const sample = `local Players = game:GetService("Players")
 
 Players.PlayerAdded:Connect(function(player)
-    greetPlayer(player)
+    print("Welcome, " .. player.Name)
 end)`
 
-type Options = {
-  rename: boolean
-  strings: boolean
-  comments: boolean
-  compact: boolean
-}
-
-function obfuscateLua(source: string, options: Options) {
-  if (!source.trim()) return ''
-  let output = source
-  if (options.comments) output = output.replace(/--[^\n]*/g, '')
-  if (options.strings) {
-    output = output.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (_, value: string) => {
-      const encoded = [...value].map((char) => `\\${char.charCodeAt(0)}`).join('')
-      return `string.char(${encoded.replaceAll('\\', ',').replace(/^,/, '')})`
-    })
-  }
-  if (options.rename) {
-    const names = ['Players', 'ReplicatedStorage', 'player', 'message', 'greetPlayer']
-    names.forEach((name, index) => {
-      output = output.replace(new RegExp(`\\b${name}\\b`, 'g'), `_${String.fromCharCode(97 + index)}${index + 1}`)
-    })
-  }
-  if (options.compact) output = output.replace(/\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()
-  return `-- Obfuscated with Luashield\n${output}`
-}
-
 export default function Page() {
+  const [scripts, setScripts] = useState<Script[]>([])
+  const [name, setName] = useState('')
   const [source, setSource] = useState('')
-  const [result, setResult] = useState('')
-  const [copied, setCopied] = useState(false)
+  const [visibility, setVisibility] = useState<'public' | 'private'>('private')
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState('')
-  const [options, setOptions] = useState<Options>({ rename: true, strings: true, comments: true, compact: false })
-  const stats = useMemo(() => ({ input: source.length, output: result.length }), [source, result])
+  const [message, setMessage] = useState('')
+  const [copied, setCopied] = useState<string | null>(null)
 
-  const process = async () => {
-    if (!source.trim()) return
-    setBusy(true)
-    setNotice('Publishing private script...')
+  const loadFeed = async () => {
+    const response = await fetch('/api/lua', { cache: 'no-store' })
+    if (response.ok) setScripts(await response.json())
+  }
+  useEffect(() => { loadFeed() }, [])
+
+  const publish = async () => {
+    if (!name.trim() || !source.trim()) return setMessage('Add a name and source first')
+    setBusy(true); setMessage('')
     try {
-      const protectedSource = obfuscateLua(source, options)
-      const bytes = new TextEncoder().encode(protectedSource)
-      const hash = await crypto.subtle.digest('SHA-256', bytes)
-      const id = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('')
-      const response = await fetch('/api/lua', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, source: protectedSource }) })
-      if (!response.ok) throw new Error('publish failed')
-      const endpoint = `${window.location.origin}/api/lua/${id}`
-      setResult(`loadstring(game:HttpGet("${endpoint}"))()`)
-      setNotice('Private endpoint ready')
-    } catch {
-      setNotice('Could not publish script')
-    } finally {
-      setBusy(false)
-    }
+      const response = await fetch('/api/lua', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, source, visibility }) })
+      if (!response.ok) throw new Error()
+      setName(''); setSource(''); setVisibility('private'); setMessage('Script published')
+      await loadFeed()
+    } catch { setMessage('Could not publish script') } finally { setBusy(false) }
   }
-  const copy = async () => {
-    if (!result) return
-    await navigator.clipboard.writeText(result)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1800)
-  }
-  const download = () => {
-    if (!result) return
-    const blob = new Blob([result], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'loadstring.lua'
-    anchor.click()
-    URL.revokeObjectURL(url)
+  const copy = async (script: Script) => {
+    await navigator.clipboard.writeText(script.loadstring)
+    setCopied(script.id); window.setTimeout(() => setCopied(null), 1500)
   }
 
-  return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border/70 bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-5 py-4 lg:px-8">
-          <div className="flex items-center gap-3"><div className="brand-mark"><Braces size={19} strokeWidth={2.5} /></div><div><p className="font-mono text-[15px] font-bold tracking-tight">luashield<span className="text-primary">.io</span></p><p className="font-mono text-[9px] uppercase tracking-[0.24em] text-muted-foreground">roblox lua obfuscator</p></div></div>
-          <nav className="hidden items-center gap-6 text-xs text-muted-foreground md:flex"><a href="#workspace" className="hover:text-foreground">Workspace</a><a href="#options" className="hover:text-foreground">Options</a><a href="#about" className="hover:text-foreground">About</a><a href="https://github.com" aria-label="GitHub" className="hover:text-foreground"><GitBranch size={16} /></a></nav>
-          <div className="status-pill"><span className="status-dot" /> secure session</div>
-        </div>
-      </header>
-
-      <section className="mx-auto max-w-[1440px] px-5 pb-8 pt-12 lg:px-8 lg:pt-16">
-        <div className="max-w-3xl"><div className="eyebrow"><ShieldCheck size={14} /> client-side privacy</div><h1 className="mt-4 text-balance font-mono text-4xl font-bold tracking-[-0.06em] sm:text-6xl">Protect your code.<br /><span className="text-primary">Keep control.</span></h1><p className="mt-5 max-w-xl text-pretty text-sm leading-6 text-muted-foreground sm:text-base">A focused Lua obfuscator built for Roblox creators. Your scripts never leave this browser.</p></div>
-      </section>
-
-      <section id="workspace" className="mx-auto grid max-w-[1440px] gap-4 px-5 pb-8 lg:grid-cols-[1fr_1fr_280px] lg:px-8">
-        <Editor title="source.lua" icon={<FileCode2 size={15} />} value={source} onChange={setSource} placeholder="-- paste your Roblox Lua script here..." />
-        <Editor title="obfuscated.lua" icon={<Code2 size={15} />} value={result} readOnly placeholder="-- your protected script will appear here..." />
-        <aside id="options" className="panel flex flex-col"><div className="panel-head"><span className="flex items-center gap-2"><Settings2 size={15} /> options</span><span className="text-[10px] text-muted-foreground">v1.0</span></div><div className="flex flex-col gap-1 p-3">{([['rename', 'Rename locals', 'replace identifiers'], ['strings', 'Encode strings', 'char sequence encoding'], ['comments', 'Strip comments', 'remove source notes'], ['compact', 'Compact output', 'single-line script']] as const).map(([key, label, note]) => <label key={key} className="option-row"><input type="checkbox" checked={options[key]} onChange={(e) => setOptions({ ...options, [key]: e.target.checked })} /><span className="checkmark">{options[key] && <Check size={12} />}</span><span><span className="block text-xs font-medium">{label}</span><span className="mt-0.5 block font-mono text-[9px] text-muted-foreground">{note}</span></span></label>)}</div><div className="mt-auto border-t border-border/70 p-4"><div className="mb-3 flex items-center justify-between font-mono text-[10px] text-muted-foreground"><span>INPUT</span><span>{stats.input.toLocaleString()} chars</span></div><div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground"><span>OUTPUT</span><span>{stats.output.toLocaleString()} chars</span></div></div></aside>
-      </section>
-
-      <section className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-3 px-5 pb-12 lg:px-8"><button className="primary-button" onClick={process} disabled={busy}><Play size={15} fill="currentColor" /> {busy ? 'Publishing...' : 'Obfuscate & publish'} <span className="shortcut">⌘ ↵</span></button><span className="font-mono text-[10px] text-muted-foreground">{notice || 'output is a private loadstring endpoint'}</span><button className="ghost-button" onClick={() => { setSource(sampleLua); setResult('') }}><Sparkles size={14} /> Load example</button><button className="ghost-button" onClick={() => { setSource(''); setResult('') }}><Trash2 size={14} /> Clear</button><div className="ml-auto flex gap-2"><button className="icon-button" onClick={copy} disabled={!result} aria-label="Copy output">{copied ? <Check size={16} /> : <Clipboard size={16} />}</button><button className="icon-button" onClick={download} disabled={!result} aria-label="Download output"><ArrowDownToLine size={16} /></button></div></section>
-
-      <footer id="about" className="border-t border-border/70"><div className="mx-auto flex max-w-[1440px] flex-col gap-3 px-5 py-6 text-[10px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between lg:px-8"><p className="font-mono">luashield.io / made for creators who ship</p><p className="flex items-center gap-2"><Zap size={12} className="text-primary" /> no uploads · no tracking · no nonsense</p></div></footer>
-    </main>
-  )
+  return <main className="min-h-screen overflow-hidden bg-background text-foreground">
+    <Snow />
+    <div className="relative z-10 mx-auto min-h-screen max-w-5xl px-5 py-8 sm:px-8">
+      <div className="mb-12 flex items-center justify-between"><div className="flex items-center gap-3"><div className="logo-mark">xF</div><span className="font-mono text-sm font-bold tracking-tight">xFuxk Load</span></div><span className="session-label">private session</span></div>
+      <section className="mb-9"><p className="mb-3 font-mono text-[10px] uppercase tracking-[0.24em] text-primary">roblox lua library</p><h1 className="max-w-2xl text-balance font-mono text-4xl font-bold tracking-[-0.06em] sm:text-6xl">Publish once.<br /><span className="text-primary">Load anywhere.</span></h1><p className="mt-5 max-w-lg text-sm leading-6 text-muted-foreground">Store your Roblox scripts behind a clean loadstring. Your feed is isolated to your private session.</p></section>
+      <section className="composer panel mb-10"><div className="panel-top"><span className="flex items-center gap-2"><Plus size={15} /> new script</span><span className="font-mono text-[10px] text-muted-foreground">source.lua</span></div><div className="grid gap-4 p-4 sm:grid-cols-[220px_1fr]"><div className="flex flex-col gap-3"><input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Script name" maxLength={64} /><div className="visibility"><button className={visibility === 'private' ? 'active' : ''} onClick={() => setVisibility('private')}><LockKeyhole size={14} /> Private</button><button className={visibility === 'public' ? 'active' : ''} onClick={() => setVisibility('public')}><Eye size={14} /> Public</button></div><button className="publish-button" onClick={publish} disabled={busy}><Upload size={15} /> {busy ? 'Publishing...' : 'Publish script'}</button>{message && <p className="font-mono text-[10px] text-primary">{message}</p>}</div><div className="source-box"><textarea value={source} onChange={(e) => setSource(e.target.value)} spellCheck={false} placeholder="Paste your Roblox Lua script here..." aria-label="source.lua" /><div className="source-footer"><button onClick={() => setSource(sample)} className="text-link">load example</button><span>{source.length.toLocaleString()} chars</span></div></div></div></section>
+      <section><div className="mb-4 flex items-center justify-between"><div><p className="font-mono text-xs font-bold">your scripts</p><p className="mt-1 text-xs text-muted-foreground">Only scripts from this session appear here.</p></div><span className="count-pill">{scripts.length} scripts</span></div><div className="feed">{scripts.length === 0 ? <div className="empty-state"><FileCode2 size={22} /><p>No scripts published yet.</p></div> : scripts.map((script) => <article className="script-card" key={script.id}><div className="flex min-w-0 items-center gap-3"><div className="file-icon"><FileCode2 size={16} /></div><div className="min-w-0"><h2 className="truncate text-sm font-semibold">{script.name}</h2><p className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">{script.visibility === 'private' ? <><LockKeyhole size={11} /> private</> : <><Eye size={11} /> public</>} · {new Date(script.created_at).toLocaleDateString()}</p></div></div><div className="flex items-center gap-2"><code className="hidden max-w-[360px] truncate text-[10px] text-muted-foreground lg:block">{script.loadstring}</code><button className="copy-button" onClick={() => copy(script)}>{copied === script.id ? <Check size={14} /> : <Copy size={14} />}<span className="hidden sm:inline">{copied === script.id ? 'copied' : 'copy'}</span></button></div></article>)}</div></section>
+      <footer className="mt-16 flex items-center justify-between border-t border-border/70 py-5 font-mono text-[10px] text-muted-foreground"><span>xFuxk Load</span><span className="flex items-center gap-2"><Snowflake size={12} /> session scoped</span></footer>
+    </div>
+  </main>
 }
 
-function Editor({ title, icon, value, onChange, readOnly, placeholder }: { title: string; icon: React.ReactNode; value: string; onChange?: (value: string) => void; readOnly?: boolean; placeholder: string }) {
-  return <div className="panel min-h-[390px] overflow-hidden"><div className="panel-head"><span className="flex items-center gap-2">{icon} {title}</span><span className="flex gap-1"><i /><i /><i /></span></div><div className="editor-wrap"><div className="line-numbers" aria-hidden="true">{Array.from({ length: Math.max(14, value.split('\n').length) }, (_, i) => <span key={i}>{String(i + 1).padStart(2, '0')}</span>)}</div><textarea value={value} onChange={(e) => onChange?.(e.target.value)} readOnly={readOnly} spellCheck={false} placeholder={placeholder} aria-label={title} /></div></div>
-}
+function Snow() { return <div className="snow" aria-hidden="true">{Array.from({ length: 34 }, (_, i) => <i key={i} style={{ left: `${(i * 29) % 100}%`, animationDelay: `${(i * 0.37) % 8}s`, animationDuration: `${7 + (i % 5)}s`, width: `${2 + i % 3}px`, height: `${2 + i % 3}px` }} />)}</div> }

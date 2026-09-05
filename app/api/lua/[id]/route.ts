@@ -30,18 +30,18 @@ export async function GET(
     return new NextResponse('Private script', { status: 404 })
   }
 
-  const rows = await db.execute<{ source: string; is_private: boolean; expires_at: string | null }>(sql`
+  const result = await db.execute<{ source: string; is_private: boolean; expires_at: Date | null }>(sql`
     SELECT source, is_private, expires_at
     FROM lua_scripts
     WHERE id = ${id}
     LIMIT 1
   `)
-  const script = rows[0]
+  const script = result.rows[0]
   if (!script || (script.expires_at && new Date(script.expires_at) < new Date())) {
-    return new NextResponse('Private script', { status: 404 })
+    return new NextResponse('This loadstring is private.', { status: 404 })
   }
 
-  return new NextResponse(script.source, {
+  return new NextResponse(script.is_private ? 'This loadstring is private.' : script.source, {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
       'Cache-Control': 'private, no-store, max-age=0',
