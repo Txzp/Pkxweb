@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
@@ -21,6 +22,34 @@ export async function POST(request: NextRequest) {
   }
 }
 
+function sessionHash(request: NextRequest) {
+  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || 'preview-session'
+  return createHash('sha256').update(`${forwarded}:${process.env.DATABASE_URL}`).digest('hex')
+}
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  if (!/^[a-f0-9]{64}$/.test(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  try {
+    const body = await request.json()
+    const name = String(body.name || '').trim()
+    if (!name || name.length > 64) return NextResponse.json({ error: 'Invalid name' }, { status: 400 })
+    const result = await db.execute(sql`UPDATE lua_scripts SET name = ${name} WHERE id = ${id} AND session_hash = ${sessionHash(request)}`)
+    if (result.rowCount !== 1) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ ok: true })
+  } catch { return NextResponse.json({ error: 'Unable to rename script' }, { status: 500 }) }
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  if (!/^[a-f0-9]{64}$/.test(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  try {
+    const result = await db.execute(sql`DELETE FROM lua_scripts WHERE id = ${id} AND session_hash = ${sessionHash(request)}`)
+    if (result.rowCount !== 1) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ ok: true })
+  } catch { return NextResponse.json({ error: 'Unable to delete script' }, { status: 500 }) }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -41,7 +70,7 @@ export async function GET(
     return new NextResponse('This loadstring is private.', { status: 404 })
   }
 
-  return new NextResponse(script.is_private ? 'This loadstring is private.' : script.source, {
+  return new NextResponse(script.is_private ? 'error("This loadstring is private.")' : script.source, {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
       'Cache-Control': 'private, no-store, max-age=0',

@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
       ORDER BY created_at DESC LIMIT 50
     `)
     const origin = request.nextUrl.origin
-    return NextResponse.json(result.rows.map((row) => ({ ...row, created_at: row.created_at.toISOString(), loadstring: `loadstring(game:HttpGet(\"${origin}/api/lua/${row.id}\"))()` })), { headers: { 'Cache-Control': 'no-store' } })
+    const rows = Array.isArray(result) ? result : result.rows
+    return NextResponse.json(rows.map((row) => ({ ...row, created_at: new Date(row.created_at).toISOString(), loadstring: `loadstring(game:HttpGet(\"${origin}/api/lua/${row.id}\"))()` })), { headers: { 'Cache-Control': 'no-store' } })
   } catch { return NextResponse.json({ error: 'Unable to load feed' }, { status: 500 }) }
 }
 
