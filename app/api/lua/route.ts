@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 
-function makeSlug(name: string, id: string) { const base = name.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 42) || 'script'; return `${base}-${id.slice(0, 5)}` }
+function makeSlug(name: string, id: string) { const base = name.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || 'script'; return `${base}-${id.slice(0, 8)}` }
 
 function sessionHash(request: NextRequest) {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || 'preview-session'
