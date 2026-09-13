@@ -10,6 +10,16 @@ function sessionHash(request: NextRequest) {
   return createHash('sha256').update(`${forwarded}:${process.env.DATABASE_URL}`).digest('hex')
 }
 
+function publicOrigin(request: NextRequest) {
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const requestHost = forwardedHost || request.headers.get('host') || request.nextUrl.host
+  const configuredHost = (process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL || '').replace(/^https?:\/\//, '').replace(/\/$/, '')
+  const host = requestHost.startsWith('localhost') && configuredHost ? configuredHost : requestHost
+  const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const protocol = forwardedProto || (host.startsWith('localhost') ? 'http' : 'https')
+  return `${protocol}://${host}`
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = sessionHash(request)
@@ -18,7 +28,7 @@ export async function GET(request: NextRequest) {
       WHERE session_hash = ${session} OR visibility = 'public'
       ORDER BY created_at DESC LIMIT 50
     `)
-    const origin = request.nextUrl.origin
+    const origin = publicOrigin(request)
     const rows = Array.isArray(result) ? result : result.rows
     return NextResponse.json(rows.map((row) => ({ ...row, created_at: new Date(row.created_at).toISOString(), loadstring: `loadstring(game:HttpGet(\"${origin}/${row.slug || row.id}\"))()` })), { headers: { 'Cache-Control': 'no-store' } })
   } catch { return NextResponse.json({ error: 'Unable to load feed' }, { status: 500 }) }
