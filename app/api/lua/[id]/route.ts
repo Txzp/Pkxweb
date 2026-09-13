@@ -3,102 +3,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const id = String(body.id || '')
-    const source = String(body.source || '')
-    if (!/^[a-f0-9]{64}$/.test(id) || !source || source.length > 2_000_000) {
-      return NextResponse.json({ error: 'Invalid script' }, { status: 400 })
-    }
-    await db.execute(sql`
-      INSERT INTO lua_scripts (id, source, is_private)
-      VALUES (${id}, ${source}, true)
-      ON CONFLICT (id) DO UPDATE SET source = EXCLUDED.source
-    `)
-    return NextResponse.json({ id }, { status: 201 })
-  } catch {
-    return NextResponse.json({ error: 'Unable to publish script' }, { status: 500 })
-  }
-}
+function sessionHash(request: NextRequest) { const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || 'preview-session'; return createHash('sha256').update(`${ip}:${process.env.DATABASE_URL}`).digest('hex') }
+async function owned(request: NextRequest, id: string) { const result = await db.execute<{ id: string }>(sql`SELECT id FROM lua_scripts WHERE id = ${id} AND session_hash = ${sessionHash(request)} LIMIT 1`); return result.rows[0] }
 
-function sessionHash(request: NextRequest) {
-  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || 'preview-session'
-  return createHash('sha256').update(`${forwarded}:${process.env.DATABASE_URL}`).digest('hex')
-}
-
-async function ownsScript(request: NextRequest, id: string) {
-  const result = await db.execute<{ id: string }>(sql`SELECT id FROM lua_scripts WHERE id = ${id} AND session_hash = ${sessionHash(request)} LIMIT 1`)
-  return (Array.isArray(result) ? result[0] : result.rows[0])
-}
-
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  if (!/^[a-f0-9]{64}$/.test(id) || !(await ownsScript(request, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  try {
-    const body = await request.json()
-    const source = String(body.source || '')
-    if (!source.trim() || source.length > 2_000_000) return NextResponse.json({ error: 'Invalid source' }, { status: 400 })
-    await db.execute(sql`UPDATE lua_scripts SET source = ${source} WHERE id = ${id} AND session_hash = ${sessionHash(request)}`)
-    return NextResponse.json({ ok: true })
-  } catch { return NextResponse.json({ error: 'Unable to update source' }, { status: 500 }) }
+  if (!/^[a-f0-9]{64}$/.test(id)) return new NextResponse(noAccessPage(), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+  const result = await db.execute<{ source: string; expires_at: Date | null }>(sql`SELECT source, expires_at FROM lua_scripts WHERE id = ${id} LIMIT 1`)
+  const script = result.rows[0]
+  if (!script || (script.expires_at && new Date(script.expires_at) < new Date())) return new NextResponse(noAccessPage(), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+  if ((request.headers.get('accept') || '').includes('text/html')) return new NextResponse(noAccessPage(), { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Robots-Tag': 'noindex' } })
+  return new NextResponse(script.source, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow, noarchive' } })
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  if (!/^[a-f0-9]{64}$/.test(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  try {
-    const body = await request.json()
-    const name = String(body.name || '').trim()
-    if (!name || name.length > 64) return NextResponse.json({ error: 'Invalid name' }, { status: 400 })
-    const result = await db.execute(sql`UPDATE lua_scripts SET name = ${name} WHERE id = ${id} AND session_hash = ${sessionHash(request)}`)
-    if (result.rowCount !== 1) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json({ ok: true })
-  } catch { return NextResponse.json({ error: 'Unable to rename script' }, { status: 500 }) }
-}
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) { const { id } = await params; if (!(await owned(request, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 }); const body = await request.json(); const name = String(body.name || '').trim(); const source = String(body.source || ''); const visibility = body.visibility === 'public' ? 'public' : 'private'; if (!name || !source.trim() || name.length > 64 || source.length > 2_000_000) return NextResponse.json({ error: 'Invalid script' }, { status: 400 }); await db.execute(sql`UPDATE lua_scripts SET name = ${name}, source = ${source}, visibility = ${visibility}, is_private = ${visibility !== 'public'} WHERE id = ${id} AND session_hash = ${sessionHash(request)}`); return NextResponse.json({ ok: true }) }
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) { return PUT(request, { params }) }
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) { const { id } = await params; const result = await db.execute(sql`DELETE FROM lua_scripts WHERE id = ${id} AND session_hash = ${sessionHash(request)}`); return NextResponse.json({ ok: result.rowCount === 1 }, { status: result.rowCount === 1 ? 200 : 404 }) }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  if (!/^[a-f0-9]{64}$/.test(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  try {
-    const result = await db.execute(sql`DELETE FROM lua_scripts WHERE id = ${id} AND session_hash = ${sessionHash(request)}`)
-    if (result.rowCount !== 1) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json({ ok: true })
-  } catch { return NextResponse.json({ error: 'Unable to delete script' }, { status: 500 }) }
-}
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id } = await params
-  if (!/^[a-f0-9]{64}$/.test(id)) {
-    return new NextResponse('Private script', { status: 404 })
-  }
-
-  if (request.nextUrl.searchParams.get('edit') === '1') {
-    const owned = await db.execute<{ source: string }>(sql`SELECT source FROM lua_scripts WHERE id = ${id} AND session_hash = ${sessionHash(request)} LIMIT 1`)
-    const ownRow = Array.isArray(owned) ? owned[0] : owned.rows[0]
-    if (!ownRow) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json({ source: ownRow.source }, { headers: { 'Cache-Control': 'no-store' } })
-  }
-
-  const result = await db.execute<{ source: string; is_private: boolean; expires_at: Date | null }>(sql`
-    SELECT source, is_private, expires_at
-    FROM lua_scripts
-    WHERE id = ${id}
-    LIMIT 1
-  `)
-  const script = Array.isArray(result) ? result[0] : result.rows[0]
-  if (!script || (script.expires_at && new Date(script.expires_at) < new Date())) {
-    return new NextResponse('This loadstring is private.', { status: 404 })
-  }
-
-  return new NextResponse(script.is_private ? 'loadstring("This loadstring is private.")()' : script.source, {
-    headers: {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'private, no-store, max-age=0',
-      'X-Robots-Tag': 'noindex, nofollow, noarchive',
-    },
-  })
-}
+function noAccessPage() { return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>No Access · xFuxk Tools</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#05070a;color:#eef2f7;font:14px Arial,sans-serif}main{width:min(420px,calc(100% - 40px));padding:42px 30px;text-align:center;border:1px solid #263241;border-radius:16px;background:#0b1017;box-shadow:0 24px 80px #000}div{height:100px;position:relative;margin:0 auto 22px;overflow:hidden;border-radius:10px;background:repeating-linear-gradient(135deg,#101b26 0 9px,#172432 9px 18px)}div:after{content:'×';position:absolute;inset:0;display:grid;place-items:center;color:#b9ff38;font-size:74px;font-weight:900;animation:pulse 1s infinite alternate}h1{margin:0 0 10px;font-size:30px;letter-spacing:-1px}p{margin:0;color:#8290a2;line-height:1.6}@keyframes pulse{to{transform:scale(1.08);opacity:.55}}</style></head><body><main><div></div><h1>No Access</h1><p>This script is private or the link is not available.</p></main></body></html>` }
