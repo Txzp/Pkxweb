@@ -8,14 +8,13 @@ async function owned(request: NextRequest, id: string) { const result = await db
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  if (!/^[a-f0-9]{64}$/.test(id)) return new NextResponse(noAccessPage(), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   const isEdit = new URL(request.url).searchParams.get('edit') === '1'
   if (isEdit) {
     if (!(await owned(request, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const ownedScript = await db.execute<{ source: string }>(sql`SELECT source FROM lua_scripts WHERE id = ${id} LIMIT 1`)
     return NextResponse.json({ source: ownedScript.rows[0]?.source || '' }, { headers: { 'Cache-Control': 'no-store' } })
   }
-  const result = await db.execute<{ source: string; expires_at: Date | null }>(sql`SELECT source, expires_at FROM lua_scripts WHERE id = ${id} LIMIT 1`)
+  const result = await db.execute<{ source: string; expires_at: Date | null }>(sql`SELECT source, expires_at FROM lua_scripts WHERE (id = ${id} OR slug = ${id}) LIMIT 1`)
   const script = result.rows[0]
   if (!script || (script.expires_at && new Date(script.expires_at) < new Date())) return new NextResponse(noAccessPage(), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   if ((request.headers.get('accept') || '').includes('text/html')) return new NextResponse(noAccessPage(), { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Robots-Tag': 'noindex' } })
