@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Code2, Copy, FileCode2, KeyRound, Pencil, Plus, Settings, Trash2, Upload, X } from 'lucide-react'
+import { Check, Code2, Copy, Download, FileCode2, KeyRound, Pencil, Plus, RefreshCw, Settings, Trash2, Upload, X } from 'lucide-react'
 
 type Theme = 'light' | 'dark' | 'hacker'
 type Script = { id:string; name:string; source?:string; visibility:'private'|'public'; created_at:string; loadstring:string }
@@ -17,6 +17,8 @@ export default function Home(){
  const load=async()=>{const r=await fetch('/api/lua',{cache:'no-store'});const d=await r.json();setScripts(Array.isArray(d)?d:[])}; const loadKeys=async()=>{const r=await fetch('/api/keys',{cache:'no-store'});const d=await r.json();setKeys(Array.isArray(d)?d:[])}
  useEffect(()=>{void load();void loadKeys()},[])
  const copy=async(v:string,id:string)=>{await navigator.clipboard.writeText(v);setCopied(id);window.setTimeout(()=>setCopied(''),1400)}
+  const downloadScript=(s:Script)=>{const link=document.createElement('a');link.href=`/api/lua/${s.id}?download=1`;link.click()}
+  const duplicateScript=async(s:Script)=>{const r=await fetch(`/api/lua/${s.id}`,{method:'POST'});if(r.ok){notify('Script duplicated and old link replaced');void load()}else notify('Could not duplicate script')}
  const publish=async()=>{if(!name.trim()||!source.trim())return notify('Add a name and source.lua first');const r=await fetch('/api/lua',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,source,visibility})});if(r.ok){setName('');setSource('');notify('Script published');void load()}else notify('Could not publish')}
  const openEditor=async(s:Script)=>{const r=await fetch(`/api/lua/${s.id}?edit=1`,{cache:'no-store'});if(!r.ok)return notify('This script is not in your IP session');const d=await r.json();setEditing(s);setEditName(s.name);setEditSource(d.source||'');setEditVisibility(s.visibility)}
  const saveEditor=async()=>{if(!editing||!editName.trim()||!editSource.trim())return notify('Name and source are required');const r=await fetch(`/api/lua/${editing.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:editName,source:editSource,visibility:editVisibility})});if(r.ok){setEditing(null);notify('Script updated');void load()}else notify('Could not update script')}
