@@ -7,8 +7,8 @@ const geist = Geist({ subsets: ['latin'], variable: '--font-geist' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
 
 export const metadata: Metadata = {
-  title: 'xFuxk Tools — Publish once. Load anywhere.',
-  description: 'Obfuscate Roblox Lua scripts and create secure key systems.',
+  title: 'Peak X — Publish once. Load anywhere.',
+  description: 'Peak X protects Roblox Lua scripts and creates secure key systems.',
   generator: 'v0.app',
 }
 
