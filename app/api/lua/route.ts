@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   try {
     const sessionId = getSessionId(request)
     const session = sessionHash(request, sessionId)
-    const result = await db.execute<{ id: string; name: string; slug: string; source: string; visibility: 'public' | 'private'; created_at: Date }>(sql`
+    const result = await db.execute<{ id: string; name: string; visibility: 'public' | 'private'; created_at: Date }>(sql`
       SELECT id, name, slug, source, visibility, created_at FROM lua_scripts
       WHERE session_hash = ${session} OR visibility = 'public'
       ORDER BY created_at DESC LIMIT 50
