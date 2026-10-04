@@ -12,6 +12,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const query = new URL(request.url).searchParams
   const isEdit = query.get('edit') === '1'
   const isDownload = query.get('download') === '1'
+  const isStats = query.get('stats') === '1'
+  if (isStats) { if (!(await owned(request, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 }); const result = await db.execute<{ count: string; last_execution: Date | null }>(sql`SELECT count(*)::text AS count, max(e.executed_at) AS last_execution FROM script_executions e JOIN lua_scripts s ON s.id = e.script_id WHERE s.id = ${id} OR s.slug = ${id}`); return NextResponse.json({ executions: Number(result.rows[0]?.count || 0), lastExecution: result.rows[0]?.last_execution || null }, { headers: { 'Cache-Control': 'no-store' } }) }
   if (isEdit) {
     if (!(await owned(request, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const ownedScript = await db.execute<{ source: string }>(sql`SELECT source FROM lua_scripts WHERE (id = ${id} OR slug = ${id}) AND session_hash = ${(await sessionHash(request))} LIMIT 1`)
