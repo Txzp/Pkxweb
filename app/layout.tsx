@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   title: 'PEAKX — Publish once. Load anywhere.',
   description: 'Peak X protects Roblox Lua scripts and creates secure key systems.',
   generator: 'v0.app',
+  verification: {
+    google: 'ESYc6N6VJ1vsMwIz3EHj0cTKAkYu2sshzB6-OK3j0sI',
+  },
   icons: {
     icon: [{ url: '/peakx-favicon.png', type: 'image/png' }],
     shortcut: ['/peakx-favicon.png'],
