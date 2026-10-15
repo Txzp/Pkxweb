@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     `)
     const origin = publicOrigin(request)
     const rows = Array.isArray(result) ? result : result.rows
-    return ensureSession(NextResponse.json(rows.map((row) => ({ ...row, created_at: new Date(row.created_at).toISOString(), loadstring: `loadstring(game:HttpGet(\"${origin}/api/lua/${row.slug || row.id}\"))()` })), { headers: { 'Cache-Control': 'no-store' } }), request)
+    return ensureSession(NextResponse.json(rows.map((row) => ({ ...row, created_at: new Date(row.created_at).toISOString(), loadstring: `loadstring(game:HttpGet(\"${origin}/${row.slug || row.id}\"))()` })), { headers: { 'Cache-Control': 'no-store' } }), request)
   } catch { return NextResponse.json({ error: 'Unable to load feed' }, { status: 500 }) }
 }
 
